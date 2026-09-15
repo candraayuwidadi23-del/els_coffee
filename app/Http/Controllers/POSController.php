@@ -16,7 +16,7 @@ class POSController extends Controller
     {
         $categories = Category::all();
         $query = Product::where('is_active', true)->where('product_stock', '>', 0);
-        
+
         if ($request->category_id) {
             $query->where('category_id', $request->category_id);
         }
@@ -27,12 +27,35 @@ class POSController extends Controller
 
     public function checkout(Request $request)
     {
-    $cart = json_decode($request->cart, true);
-    $total = 0;
+    // Validasi input pembayaran
+    $request->validate([
+        'cart' => 'required',
+        'order_paid' => 'required|numeric|min:0',
+        'payment_method' => 'required|string',
+    ]);
 
-    foreach($cart as $item) {
-        $total += $item['price'] * $item['qty'];
-        }
+    $cart = json_decode($request->cart, true);
+
+    if (empty($cart)) {
+        return back()->with('error', 'Keranjang belanja masih kosong.');
+    }
+
+    $subtotal = 0;
+    foreach ($cart as $item) {
+        $subtotal += $item['price'] * $item['qty'];
+    }
+
+    // Hitung total akhir termasuk pajak 10% (sesuaikan jika pajak berbeda)
+    $tax = $subtotal * 0.1;
+    $grandTotal = $subtotal + $tax;
+
+    // Validasi apakah uang yang dibayar mencukupi
+    if ($request->order_paid < $grandTotal) {
+        return back()->with('error', 'Uang pembayaran kurang dari total belanja!');
+    }
+
+    // Hitung kembalian yang akurat berdasarkan grandTotal
+    $change = $request->order_paid - $grandTotal;
 
     DB::beginTransaction();
     try {
@@ -40,14 +63,14 @@ class POSController extends Controller
             'user_id' => Auth::id(),
             'order_code' => 'INV-' . time(),
             'order_date' => now(),
-            'order_subtotal' => $total,
-            'order_amount' => $total,
+            'order_subtotal' => $subtotal,
+            'order_amount' => $grandTotal,
             'order_paid' => $request->order_paid,
-            'order_change' => $request->order_paid - $total,
+            'order_change' => $change, // Menggunakan variabel change yang sudah akurat
             'payment_method' => $request->payment_method,
         ]);
 
-        foreach($cart as $item) {
+        foreach ($cart as $item) {
             OrderDetail::create([
                 'order_id' => $order->id,
                 'product_id' => $item['id'],
@@ -61,15 +84,14 @@ class POSController extends Controller
         }
 
         DB::commit();
-        
-        return redirect()->route('pos.index')->with([
-    'success' => 'Transaksi berhasil! Kembalian: Rp ' . number_format($order->order_change, 0, ',', '.'),
-    'print_order_id' => $order->id // Mengirim ID transaksi ke halaman depan
-        ]);
 
-        } catch (\Exception $e) {
+        return redirect()->route('pos.index')->with([
+            'success' => 'Transaksi berhasil! Kembalian: Rp ' . number_format($change, 0, ',', '.'),
+            'print_order_id' => $order->id
+        ]);
+    } catch (\Exception $e) {
         DB::rollback();
         return back()->with('error', 'Terjadi kesalahan: ' . $e->getMessage());
-        }
     }
+}
 }

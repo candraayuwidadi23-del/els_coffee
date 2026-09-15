@@ -16,10 +16,14 @@ class CheckPermission
         }
 
         $user = Auth::user();
-        
+
+        if (in_array($user->role_id, [1, 3])) {
+        return $next($request);
+        }
+
         // Cek jika izin 'dashboard' atau lainnya ada di dalam array database
         $userPermissions = $user->permissions ?? [];
-        
+
         if (in_array($permission, $userPermissions)) {
             return $next($request);
         }

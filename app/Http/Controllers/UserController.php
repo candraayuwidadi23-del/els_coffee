@@ -5,20 +5,22 @@ namespace App\Http\Controllers;
 use App\Models\User;
 use App\Models\Role;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 
 class UserController extends Controller
 {
     public function index()
     {
-        // Pengecekan keamanan (Opsional tapi disarankan): Hanya Admin yang boleh akses
-        if (auth()->user()->role->name !== 'admin') {
-            abort(403, 'Maaf, Anda tidak memiliki akses ke halaman ini.');
-        }
+    // Ubah bagian ini: Izinkan 'admin' dan 'pimpinan'
+    $allowedRoles = ['admin', 'pimpinan']; // Pastikan penulisan 'pimpinan' sesuai dengan isi database tabel roles
+    if (!in_array(Auth::user()->role->name, $allowedRoles)) {
+        abort(403, 'Maaf, Anda tidak memiliki akses ke halaman ini.');
+    }
 
-        $users = User::with('role')->get();
-        $roles = Role::all();
-        return view('users.index', compact('users', 'roles'));
+    $users = User::with('role')->get();
+    $roles = Role::all();
+    return view('users.index', compact('users', 'roles'));
     }
 
     public function store(Request $request)
@@ -40,23 +42,23 @@ class UserController extends Controller
         return back()->with('success', 'User berhasil ditambahkan.');
     }
 
-    public function edit($id)
+    public function edit(int $id)
     {
         $user = User::findOrFail($id);
         $roles = Role::all(); // <-- WAJIB ditambahkan agar bisa dipilih di form edit
-        return view('users.edit', compact('user', 'roles')); 
+        return view('users.edit', compact('user', 'roles'));
     }
 
-    public function update(Request $request, $id)
+    public function update(Request $request, int $id)
     {
         $user = User::findOrFail($id);
-        
+
         $request->validate([
             'name' => 'required|string|max:255',
             'email' => 'required|email|unique:users,email,' . $id,
             'role_id' => 'required',
         ]);
-        
+
         $data = [
             'name' => $request->name,
             'email' => $request->email,
@@ -73,12 +75,12 @@ class UserController extends Controller
         return redirect()->route('users.index')->with('success', 'Data & hak akses spesifik pengguna berhasil diubah!');
     }
 
-    public function destroy($id)
+    public function destroy(int $id)
     {
         $user = User::findOrFail($id);
 
         // Mencegah admin menghapus akunnya sendiri saat sedang login
-        if (auth()->id() == $id) {
+        if (Auth::id() == $id) {
             return redirect()->route('users.index')->with('error', 'Anda tidak bisa menghapus akun Anda sendiri!');
         }
 
